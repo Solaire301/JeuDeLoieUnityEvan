@@ -10,18 +10,20 @@ public class GameManager : MonoBehaviour
     [SerializeField] private Board board;
     [SerializeField] private Dice dice;
     [SerializeField] private PlayerPawn pawn;
-    [Min(0f)] [SerializeField] private float skipTurnDelay = 1f;
+    [Min(0f)][SerializeField] private float skipTurnDelay = 1f;
 
     private readonly HashSet<int> resolvedEffectTiles = new HashSet<int>();
     private WaitForSeconds skipTurnWait;
     private bool dependenciesReady;
     private bool busy;
     private bool won;
+    private bool lastMoveSucceeded;
     private int turnNumber;
     private int pendingSkips;
 
     public event Action<int> TurnStarted;
     public event Action<int> TurnSkipped;
+    public event Action<int> PawnMoving; 
     public event Action PlayerWon;
 
     private void Awake()
@@ -81,19 +83,36 @@ public class GameManager : MonoBehaviour
         StartCoroutine(PlayTurn(value));
     }
 
-    private IEnumerator PlayTurn(int roll)
+    // mouvement de cases
+    private IEnumerator MovePawn(int signedSteps)
     {
-        IReadOnlyList<int> path = board.GetMovementPath(pawn.CurrentIndex, roll);
+        lastMoveSucceeded = false;
+
+        IReadOnlyList<int> path = board.GetMovementPath(pawn.CurrentIndex, signedSteps);
         if (path.Count == 0)
         {
-            Debug.LogError("GameManager : chemin de déplacement invalide, tour interrompu.", this);
+            Debug.LogError($"GameManager : chemin de déplacement invalide ({signedSteps} pas depuis la case {pawn.CurrentIndex}).", this);
             yield break;
         }
 
+        PawnMoving?.Invoke(signedSteps);
+
         yield return StartCoroutine(pawn.WalkTo(path, board));
+
         if (!pawn.LastWalkCompleted)
         {
-            Debug.LogError("GameManager : déplacement du pion non terminé, tour interrompu.", this);
+            Debug.LogError($"GameManager : déplacement de {signedSteps} pas non terminé.", this);
+            yield break;
+        }
+
+        lastMoveSucceeded = true;
+    }
+
+    private IEnumerator PlayTurn(int roll)
+    {
+        yield return StartCoroutine(MovePawn(roll));
+        if (!lastMoveSucceeded)
+        {
             yield break;
         }
 
@@ -129,17 +148,10 @@ public class GameManager : MonoBehaviour
             }
 
             int signedSteps = tile.Type == TileType.Advance ? steps : -steps;
-            IReadOnlyList<int> effectPath = board.GetMovementPath(index, signedSteps);
-            if (effectPath.Count == 0)
-            {
-                Debug.LogError($"GameManager : chemin d'effet invalide depuis la case {index}, tour interrompu.", this);
-                yield break;
-            }
 
-            yield return StartCoroutine(pawn.WalkTo(effectPath, board));
-            if (!pawn.LastWalkCompleted)
+            yield return StartCoroutine(MovePawn(signedSteps));
+            if (!lastMoveSucceeded)
             {
-                Debug.LogError($"GameManager : déplacement d'effet non terminé depuis la case {index}, tour interrompu.", this);
                 yield break;
             }
         }
