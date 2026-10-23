@@ -54,7 +54,24 @@ public class GameManager : MonoBehaviour
             return;
         }
 
-        if (!pawn.Initialize(board, StartIndex))
+        int startIndex = StartIndex;
+        if (PlayerProgress.HasSavedTile)
+        {
+            int saved = PlayerProgress.SavedTileIndex;
+
+            // On ignore la sauvegarde si elle n'existe pas sur ce plateau
+            // ou si elle correspondrait directement à la case d'arrivée.
+            if (saved < board.TileCount - 1)
+            {
+                startIndex = saved;
+            }
+            else
+            {
+                Debug.LogWarning($"GameManager : case sauvegardée {saved} inutilisable sur ce plateau, départ à la case {StartIndex}.", this);
+            }
+        }
+
+        if (!pawn.Initialize(board, startIndex))
         {
             Debug.LogError("GameManager : initialisation du pion impossible, la partie ne démarre pas.", this);
             return;
@@ -158,11 +175,14 @@ public class GameManager : MonoBehaviour
 
         if (pawn.CurrentIndex == board.TileCount - 1)
         {
+            PlayerProgress.Clear(); // niveau terminé : le prochain level repart de la case 0
             won = true;
             busy = false;
             PlayerWon?.Invoke();
             yield break;
         }
+
+        PlayerProgress.Save(pawn.CurrentIndex);
 
         while (pendingSkips > 0)
         {
